@@ -9,9 +9,11 @@ db = SQLAlchemy()
 migrate = Migrate()
 
 def create_app():
+    # Initialize Flask app and env variables
     app = Flask(__name__)
     load_dotenv()
     
+    # Configure database
     app.config["SQLALCHEMY_DATABASE_URI"] = os.environ["DATABASE_URL"]
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
@@ -19,5 +21,8 @@ def create_app():
     migrate.init_app(app, db)
 
     from . import models
+    from .routes.tasks import tasks_bp
 
+    app.register_blueprint(tasks_bp)
+    
     return app

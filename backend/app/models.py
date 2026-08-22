@@ -27,3 +27,14 @@ class tasks(db.Model):
     status = db.Column(db.Enum(task_status), default=task_status.todo, nullable=False)
     priority = db.Column(db.Enum(task_priority), default=task_priority.medium, nullable=False)
     position = db.Column(db.Integer, nullable=False, default=0)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "title": self.title,
+            "description": self.description,
+            "status": str(self.status),
+            "priority": str(self.priority),
+            #due date later
+            "position": self.position
+        }
