@@ -18,3 +18,7 @@ frontend/dist/
 .vscode/
 .idea/
 .DS_Store
+
+# Tooling / build artifacts
+.build/
+.sourcekit-lsp/

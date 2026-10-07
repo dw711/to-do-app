@@ -1,15 +1,14 @@
-from multiprocessing.sharedctypes import Value
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, g, jsonify, request
 from .. import db
-from ..models import tasks, task_status, task_priority, users
+from .auth import login_required
+from ..models import tasks, task_status
 
 tasks_bp = Blueprint("tasks", __name__, url_prefix="/api/tasks")
 
-DEV_USER_ID = 1
-
 @tasks_bp.get("") #Phase 1 get tasks by queries
+@login_required
 def get_tasks():
-    user_id = DEV_USER_ID #get user id (from auth?) after login is implemented
+    user_id = g.current_user.id
     status = request.args.get("status", type=str)
     #q = request.args.get("q", type=str) #implement Phase 5. search by content of cards or title
     query = db.select(tasks).where(tasks.user_id==user_id)
@@ -20,98 +19,119 @@ def get_tasks():
         except ValueError:
             return err("UNAUTHROISED", "Incorrect Status", 401)
     
-    query = query.order_by(tasks.status, tasks.position)
+    query = query.order_by(tasks.status, tasks.position, tasks.id)
     tasks_list = db.session.scalars(query).all()
-    if not tasks_list:
-        return err("NOT_FOUND", "Task(s) not found, please change your parameters", 404)
-    return jsonify({
-        "tasks": [task.to_dict() for task in tasks_list]
-    }), 200
+    return jsonify([
+        task.to_dict() for task in tasks_list
+    ]), 200
 
 @tasks_bp.post("") #Phase 1 add data to databse, need to add other data like dates later
+@login_required
 def create_task():
-    data = request.get_json(silent=True) or {}
-    user_id = DEV_USER_ID #temporary dev user id, change after login system
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return err("VALIDATION_ERROR", "A JSON object is required", 400)
+    user_id = g.current_user.id
 
-    print("Content-Type:", request.content_type)
-    print("Raw body:", request.get_data(as_text=True))
-    if not data.get("title"):
-        return err("VALIDATION ERROR", "Title required", 400)
-    new_task = tasks(
-        user_id=user_id,
-        title=data.get("title").strip(),
-        description=data.get("description", ""),
-        status=task_status[data.get("status", "todo")],
-        priority=task_priority[data.get("priority", "medium")],
-        position=data.get("position", 0)
-    )
-    
     try:
-        print(new_task)
+        title = data.get("title")
+        if not isinstance(title, str) or not title.strip():
+            return err("VALIDATION_ERROR", "Title required", 400)
+        status = parse_enum(task_status, data.get("status", "todo"), "status")
+        existing_positions = db.session.scalars(
+            db.select(tasks.position).where(
+                tasks.user_id == user_id,
+                tasks.status == status,
+            )
+        ).all()
+        new_task = tasks(
+            user_id=user_id,
+            title=title.strip(),
+            description=data.get("description", ""),
+            status=status,
+            position=max(existing_positions, default=-1) + 1,
+        )
         db.session.add(new_task)
         db.session.commit()
         return jsonify(new_task.to_dict()), 201
-    except ValueError:
-        return err("UNAUTHORISED", "Invalid status or priority", 401)
+    except ValueError as exc:
+        db.session.rollback()
+        return err("VALIDATION_ERROR", str(exc), 400)
     except Exception as e:
         db.session.rollback()
-        print(repr(e))
         return err("INTERNAL_ERROR", "Something went wrong", 500)
 
 @tasks_bp.get("/<int:task_id>") #Phase 1, get task by id
+@login_required
 def get_task_by_id(task_id):
-    user_id = DEV_USER_ID #Change this phase 2
-    task = return_task_by_id(task_id=task_id)
+    task = return_task_by_id(task_id=task_id, user_id=g.current_user.id)
     if not task:
         return err("NOT_FOUND", "Task not found", 404)
-    return jsonify({"task": task.to_dict()}), 200
+    return jsonify(task.to_dict()), 200
 
 @tasks_bp.patch("/<int:task_id>")#Phase 1, update task by id
+@login_required
 def change_card(task_id):
-    user_id = DEV_USER_ID
-    task = return_task_by_id(task_id=task_id) # get task first from helper 
-    if not task or task.user_id != user_id: 
+    task = return_task_by_id(task_id=task_id, user_id=g.current_user.id)  # get task first from helper
+    if not task:
         return err("NOT_FOUND", "Task not found", 404)
-    data = request.get_json(silent=True) or {}
-    #patch after this
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return err("VALIDATION_ERROR", "A JSON object is required", 400)
     try:
-        task.title = data.get("title") or task.title
-        task.description = data.get("description") or task.description
-        task.priority = task_priority(data.get("priority")or task.priority)
+        if "title" in data:
+            title = data["title"]
+            if not isinstance(title, str) or not title.strip():
+                return err("VALIDATION_ERROR", "Title required", 400)
+            task.title = title.strip()
+        if "description" in data:
+            description = data["description"]
+            if description is not None and not isinstance(description, str):
+                db.session.rollback()
+                return err("VALIDATION_ERROR", "Description must be text", 400)
+            task.description = description
+        if "status" in data:
+            new_status = parse_enum(task_status, data["status"], "status")
+            if new_status != task.status:
+                reposition_task(task, new_status, None)
         db.session.commit()
-        return jsonify({"task": task.to_dict()}), 200
-    except ValueError:
-        return err("UNAUTHROISED", "One or more incorrect fields", 401)
+        return jsonify(task.to_dict()), 200
+    except ValueError as exc:
+        db.session.rollback()
+        return err("VALIDATION_ERROR", str(exc), 400)
     except Exception as e:
         db.session.rollback()
-        print(repr(e))
         return err("INTERNAL_ERROR", "Something went wrong", 500)
 
 @tasks_bp.patch("/<int:task_id>/move") #Phase 1, moving. changes status and position
+@login_required
 def move_task(task_id):
-    user_id = DEV_USER_ID
-    task = return_task_by_id(task_id=task_id) # get task first from helper
-    if not task or task.user_id != user_id: 
+    task = return_task_by_id(task_id=task_id, user_id=g.current_user.id)  # get task first from helper
+    if not task:
         return err("NOT_FOUND", "Task not found", 404)
-    data = request.get_json(silent=True) or {}
-    #patch after this
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return err("VALIDATION_ERROR", "A JSON object is required", 400)
     try:
-        task.status = task_status(data.get("status", task.status))
-        task.position = data.get("position", task.position)
+        position = data.get("position", task.position)
+        if isinstance(position, bool) or not isinstance(position, int) or position < 0:
+            return err("VALIDATION_ERROR", "Position must be a non-negative integer", 400)
+        new_status = parse_enum(task_status, data.get("status", task.status.value), "status")
+        reposition_task(task, new_status, position)
         db.session.commit()
-        return jsonify({"task": task.to_dict()}), 200
-    except ValueError:
-        return err("UNAUTHROISED", "One or more incorrect fields", 401)
+        return jsonify(task.to_dict()), 200
+    except ValueError as exc:
+        db.session.rollback()
+        return err("VALIDATION_ERROR", str(exc), 400)
     except Exception as e:
         db.session.rollback()
-        print(repr(e))
         return err("INTERNAL_ERROR", "Something went wrong", 500)
 
 @tasks_bp.delete("/<int:task_id>")#Phase 1, delete task by id
+@login_required
 def delete_task(task_id):
-    user_id = DEV_USER_ID #Change this Phase 2
-    task = return_task_by_id(task_id=task_id)
-    if not task or task.user_id != user_id:
+    task = return_task_by_id(task_id=task_id, user_id=g.current_user.id)
+    if not task:
         return err("NOT_FOUND", "Task not found", 404)
     try:
         db.session.delete(task)
@@ -119,7 +139,6 @@ def delete_task(task_id):
         return jsonify({}), 204
     except Exception as e:
         db.session.rollback()
-        print(repr(e))
         return err("INTERNAL_ERROR", "Something went wrong", 500)
 
 def err(code: str, message: str, status: int):
@@ -130,10 +149,50 @@ def err(code: str, message: str, status: int):
         }
     }), status
 
-def return_task_by_id(task_id):
+def return_task_by_id(task_id, user_id):
     '''
     helper function to return task by id
     '''
-    query = db.select(tasks).where(tasks.id==task_id)
+    query = db.select(tasks).where(tasks.id == task_id, tasks.user_id == user_id)
     task = db.session.scalar(query)
     return task
+
+
+def reposition_task(task, new_status, position):
+    """Move a task and renumber the affected columns in one transaction."""
+    source_status = task.status
+    source_tasks = db.session.scalars(
+        db.select(tasks)
+        .where(tasks.user_id == task.user_id, tasks.status == source_status)
+        .order_by(tasks.position, tasks.id)
+    ).all()
+    source_tasks.remove(task)
+
+    if new_status == source_status:
+        destination_tasks = source_tasks
+    else:
+        destination_tasks = db.session.scalars(
+            db.select(tasks)
+            .where(tasks.user_id == task.user_id, tasks.status == new_status)
+            .order_by(tasks.position, tasks.id)
+        ).all()
+
+    if source_status != new_status:
+        task.status = new_status
+
+    insert_at = len(destination_tasks) if position is None else min(position, len(destination_tasks))
+    destination_tasks.insert(insert_at, task)
+    for index, item in enumerate(destination_tasks):
+        item.position = index
+    if source_status != new_status:
+        for index, item in enumerate(source_tasks):
+            item.position = index
+
+
+def parse_enum(enum_type, value, field_name):
+    if not isinstance(value, str):
+        raise ValueError(f"Invalid {field_name}")
+    try:
+        return enum_type(value)
+    except ValueError as exc:
+        raise ValueError(f"Invalid {field_name}") from exc
