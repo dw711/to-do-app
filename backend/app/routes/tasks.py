@@ -1,7 +1,8 @@
 from flask import Blueprint, g, jsonify, request
 from .. import db
 from .auth import login_required
-from ..models import tasks, task_status
+from ..models import tasks, task_status, task_priority
+from datetime import datetime, timezone, date
 
 tasks_bp = Blueprint("tasks", __name__, url_prefix="/api/tasks")
 
@@ -17,7 +18,7 @@ def get_tasks():
             status = task_status(status)
             query = query.where(tasks.status==status)
         except ValueError:
-            return err("UNAUTHROISED", "Incorrect Status", 401)
+            return err("VALIDATION_ERROR", "Invalid status", 400)
     
     query = query.order_by(tasks.status, tasks.position, tasks.id)
     tasks_list = db.session.scalars(query).all()
@@ -38,6 +39,11 @@ def create_task():
         if not isinstance(title, str) or not title.strip():
             return err("VALIDATION_ERROR", "Title required", 400)
         status = parse_enum(task_status, data.get("status", "todo"), "status")
+        due_date = data.get("due_date")
+        if due_date is not None: #getting dates
+            due_date = parse_due_date(due_date)
+
+        priority = parse_enum(task_priority, data.get("priority", "medium"), "priority")
         existing_positions = db.session.scalars(
             db.select(tasks.position).where(
                 tasks.user_id == user_id,
@@ -50,6 +56,8 @@ def create_task():
             description=data.get("description", ""),
             status=status,
             position=max(existing_positions, default=-1) + 1,
+            due_date=due_date,
+            priority=priority
         )
         db.session.add(new_task)
         db.session.commit()
@@ -94,6 +102,14 @@ def change_card(task_id):
             new_status = parse_enum(task_status, data["status"], "status")
             if new_status != task.status:
                 reposition_task(task, new_status, None)
+        if "priority" in data:
+            new_priority = parse_enum(task_priority, data["priority"], "priority")
+            task.priority = new_priority
+        if "due_date" in data:
+            due_date = data["due_date"]
+            if due_date is not None:
+                    due_date = parse_due_date(due_date)
+            task.due_date = due_date
         db.session.commit()
         return jsonify(task.to_dict()), 200
     except ValueError as exc:
@@ -161,24 +177,25 @@ def return_task_by_id(task_id, user_id):
 def reposition_task(task, new_status, position):
     """Move a task and renumber the affected columns in one transaction."""
     source_status = task.status
-    source_tasks = db.session.scalars(
+    source_tasks = list(db.session.scalars(
         db.select(tasks)
         .where(tasks.user_id == task.user_id, tasks.status == source_status)
         .order_by(tasks.position, tasks.id)
-    ).all()
+    ).all())
     source_tasks.remove(task)
 
     if new_status == source_status:
         destination_tasks = source_tasks
     else:
-        destination_tasks = db.session.scalars(
+        destination_tasks = list(db.session.scalars(
             db.select(tasks)
             .where(tasks.user_id == task.user_id, tasks.status == new_status)
             .order_by(tasks.position, tasks.id)
-        ).all()
+        ).all())
 
     if source_status != new_status:
         task.status = new_status
+        task.completed_at = datetime.now(timezone.utc) if new_status == task_status.done else None
 
     insert_at = len(destination_tasks) if position is None else min(position, len(destination_tasks))
     destination_tasks.insert(insert_at, task)
@@ -196,3 +213,20 @@ def parse_enum(enum_type, value, field_name):
         return enum_type(value)
     except ValueError as exc:
         raise ValueError(f"Invalid {field_name}") from exc
+
+def parse_due_date(value):
+    if value is None:
+        return None
+
+    if not isinstance(value, str):
+        raise ValueError("due_date must be YYYY-MM-DD or null")
+
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError("due_date must be a valid YYYY-MM-DD date") from exc
+
+    if parsed.isoformat() != value:
+        raise ValueError("due_date must use YYYY-MM-DD")
+
+    return parsed

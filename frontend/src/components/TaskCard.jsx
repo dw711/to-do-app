@@ -47,7 +47,8 @@ function TaskCardContent({ task, onEdit, nodeRef, dragProps, style, isOverlay = 
     >
       <h4>{task.title}</h4>
       {description && <p>{description}</p>}
-
+      {task.due_date && <DueDateChip dueDate={task.due_date} status={task.status} />}
+      {task.priority && <span className={`badge priority-${task.priority}`}>{task.priority.toUpperCase()}</span>}
       {tags.length > 0 && (
         <div className="tag-pills">
           {tags.map((tag) => (
@@ -62,5 +63,20 @@ function TaskCardContent({ task, onEdit, nodeRef, dragProps, style, isOverlay = 
         </div>
       )}
     </li>
+  );
+}
+
+function DueDateChip({ dueDate, status }) {
+  const due = new Date(dueDate + "T00:00:00");
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const overdue = due < today && status !== "done";
+  const label = due.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+
+  return (
+    <span className={`due-chip${overdue ? " overdue" : ""}`}>
+      Due {label}
+    </span>
   );
 }

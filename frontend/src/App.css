@@ -267,6 +267,29 @@
   overflow: hidden;
 }
 
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+.priority-low    { background: #dcfce7; color: #15803d; }
+.priority-medium { background: #fef3c7; color: #b45309; }
+.priority-high   { background: #fee2e2; color: #b91c1c; }
+
+.due-chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  background: #f3f4f6;
+  color: #374151;
+  margin-right: 6px;
+}
+.due-chip.overdue { background: #fee2e2; color: #b91c1c; }
+
 .tag-pills {
   display: flex;
   flex-wrap: wrap;

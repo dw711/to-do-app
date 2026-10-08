@@ -1,18 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 
 export default function TaskModal({ isOpen, task, defaultStatus, onClose, onSubmit, onDelete }) {
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
-
+    const dateRef = useRef(null);
     // Esc to close — must be before the early return (rules of hooks)
     useEffect(() => {
         if (!isOpen) return;
         function onKey(e) { if (e.key === 'Escape') onClose(); }
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
-    }, [isOpen, onClose]);
+    }, [isOpen, onClose, task?.id, task?.due_date]);
 
     if (!isOpen) return null;
+    
 
     const isEdit = Boolean(task);
 
@@ -26,6 +27,8 @@ export default function TaskModal({ isOpen, task, defaultStatus, onClose, onSubm
                 title: fd.get('title'),
                 description: fd.get('description'),
                 status: fd.get('status'),
+                priority: fd.get('priority'),
+                due_date: fd.get('due_date') || null,
             });
         } catch (err) {
             setError(err.message || 'Unable to save the task.');
@@ -65,6 +68,23 @@ export default function TaskModal({ isOpen, task, defaultStatus, onClose, onSubm
                 <option value="done">Completed</option>
             </select>
             </label>
+            <label className = "field-label">Priority
+            <select name="priority" defaultValue={task?.priority ?? "medium"}>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+            </select>
+            </label>
+            <label>
+            Due date
+            <input
+                ref = {dateRef}
+                name = "due_date"
+                type = "date"
+                defaultValue = {task?.due_date ?? ""}
+            />
+            </label>
+
             {error && <div className="auth-error" role="alert">{error}</div>}
             <div className="modal-actions">
                 {isEdit && (

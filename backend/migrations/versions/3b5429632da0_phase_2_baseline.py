@@ -33,6 +33,7 @@ def upgrade():
     sa.Column('title', sa.String(length=255), nullable=False),
     sa.Column('description', sa.Text(), nullable=True),
     sa.Column('status', sa.Enum('todo', 'in_progress', 'done', name='task_status'), nullable=False),
+    sa.Column('priority', sa.Enum('low', 'medium', 'high', name='task_priority'), nullable=False),
     sa.Column('position', sa.Integer(), nullable=False),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id')

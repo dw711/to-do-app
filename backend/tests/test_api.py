@@ -2,7 +2,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from app import create_app, db
+from ..app import create_app, db
 
 
 class BackendApiTestCase(unittest.TestCase):

@@ -460,16 +460,16 @@ Build them in order. Each phase should end with the app working and demonstrable
 
 The board works end to end, for a single hardcoded user. No auth yet.
 
-- [ ] Postgres running; `tasks` table and both enums created via an Alembic migration
-- [ ] A dev user is seeded and its id is used everywhere `user_id` is needed
-- [ ] `GET`, `POST`, `PATCH`, `DELETE /api/tasks` and `PATCH /api/tasks/:id/move` all work against the database
-- [ ] The board renders three columns and puts every task in the right one
-- [ ] **+ New Task** opens the modal, saving creates a task, and it appears in the right column without a refresh
-- [ ] Clicking a card opens it in edit mode; saving updates the card in place
-- [ ] Deleting a task removes it from the board after a confirmation
-- [ ] Dragging a card to another column moves it, and it is still there after a page refresh
-- [ ] Dragging a card within a column reorders it, and that order survives a refresh
-- [ ] A failed move rolls the card back to its original column and shows an error
+- [x] Postgres running; `tasks` table and both enums created via an Alembic migration
+- [x] A dev user is seeded and its id is used everywhere `user_id` is needed
+- [x] `GET`, `POST`, `PATCH`, `DELETE /api/tasks` and `PATCH /api/tasks/:id/move` all work against the database
+- [x] The board renders three columns and puts every task in the right one
+- [x] **+ New Task** opens the modal, saving creates a task, and it appears in the right column without a refresh
+- [x] Clicking a card opens it in edit mode; saving updates the card in place
+- [x] Deleting a task removes it from the board after a confirmation
+- [x] Dragging a card to another column moves it, and it is still there after a page refresh
+- [x] Dragging a card within a column reorders it, and that order survives a refresh
+- [x] A failed move rolls the card back to its original column and shows an error
 
 ### Phase 2 — Login
 
@@ -486,13 +486,13 @@ The board works end to end, for a single hardcoded user. No auth yet.
 
 ### Phase 3 — Due dates and priority
 
-- [ ] `due_date` and `priority` columns migrated in with sensible defaults for existing rows
-- [ ] Both are settable in the modal and accepted by `POST` and `PATCH`
-- [ ] The priority badge renders on the card in the right colour
-- [ ] The due-date chip renders on the card, and is omitted when there's no date
-- [ ] An overdue, not-done task shows its chip in red
-- [ ] Clearing a due date works and persists as `null`
-- [ ] Moving a task to Completed sets `completed_at`; moving it back out clears it
+- [x] `due_date` and `priority` columns migrated in with sensible defaults for existing rows
+- [x] Both are settable in the modal and accepted by `POST` and `PATCH`
+- [x] The priority badge renders on the card in the right colour
+- [x] The due-date chip renders on the card, and is omitted when there's no date
+- [x] An overdue, not-done task shows its chip in red
+- [x] Clearing a due date works and persists as `null`
+- [x] Moving a task to Completed sets `completed_at`; moving it back out clears it
 
 ### Phase 4 — Tags
 
