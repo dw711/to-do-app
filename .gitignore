@@ -22,3 +22,5 @@ frontend/dist/
 # Tooling / build artifacts
 .build/
 .sourcekit-lsp/
+# Claude Code - worktrees and session files (avoid `git add .` swallowing a worktree copy of the repo)
+.claude/

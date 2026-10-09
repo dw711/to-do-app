@@ -55,7 +55,7 @@ function TaskCardContent({ task, onEdit, nodeRef, dragProps, style, isOverlay = 
             <span
               key={tag.id ?? tag.name}
               className="tag-pill"
-              style={{ background: tag.color || '#e2e8f0', color: '#0f172a' }}
+              style={{ background: tag.colour || '#e2e8f0', color: '#0f172a' }}
             >
               {tag.name}
             </span>

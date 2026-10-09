@@ -7,6 +7,7 @@ import { useAuth } from '../AuthContext';
 export default function BoardPage() {
   const { user, logout } = useAuth();
   const [tasks, setTasks] = useState([]);
+  const [tags, setTags] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [moveError, setMoveError] = useState('');
@@ -23,17 +24,40 @@ export default function BoardPage() {
   useEffect(() => {
     apiJson('/api/tasks').then(setTasks).catch(err => setError(err.message)).finally(() => setLoading(false));
   }, []);
+  useEffect(() => {
+    apiJson('/api/tags').then(setTags).catch(() => {});
+  }, []);
   const openCreate = (status = 'todo') => { setEditingTask(null); setCreateStatus(status); setModalOpen(true); };
   const openEdit = task => { setEditingTask(task); setModalOpen(true); };
   const closeModal = () => { setModalOpen(false); setEditingTask(null); };
 
-  async function handleSubmit(data) {
+  async function handleSubmit(data, tagIds) {
     const editing = Boolean(editingTask);
     const updated = await apiJson(editing ? `/api/tasks/${editingTask.id}` : '/api/tasks', {
       method: editing ? 'PATCH' : 'POST', body: JSON.stringify(data),
     });
     setTasks(current => editing ? current.map(task => task.id === updated.id ? updated : task) : [...current, updated]);
+    // Tag changes are sent separately, per the design — replace the whole set so the returned task reflects them.
+    if (Array.isArray(tagIds)) {
+      const withTags = await apiJson(`/api/tasks/${updated.id}/tags`, {
+        method: 'PUT', body: JSON.stringify({ tag_ids: tagIds }),
+      });
+      setTasks(current => current.map(task => task.id === withTags.id ? withTags : task));
+    }
     closeModal();
+  }
+  async function handleCreateTag(data) {
+    const tag = await apiJson('/api/tags', { method: 'POST', body: JSON.stringify(data) });
+    setTags(current => [...current, tag]);
+    return tag;
+  }
+  async function handleDeleteTag(tagId) {
+    await apiJson(`/api/tags/${tagId}`, { method: 'DELETE' });
+    setTags(current => current.filter(tag => tag.id !== tagId));
+    setTasks(current => current.map(task => ({
+      ...task,
+      tags: (task.tags ?? []).filter(tag => tag.id !== tagId),
+    })));
   }
   async function handleDelete() {
     await apiJson(`/api/tasks/${editingTask.id}`, { method: 'DELETE' });
@@ -102,6 +126,7 @@ export default function BoardPage() {
       <button type="button" aria-label="Dismiss error" onClick={() => setMoveError('')}>×</button>
     </div>}
     <Board tasks={tasks} onEditTask={openEdit} onMoveTask={handleMoveTask} onAddTask={openCreate} />
-    <TaskModal isOpen={modalOpen} task={editingTask} defaultStatus={createStatus} onClose={closeModal} onSubmit={handleSubmit} onDelete={handleDelete} />
+    {/* key remounts the modal per task so its tag selection re-initialises from task.tags */}
+    <TaskModal key={editingTask?.id ?? 'new'} isOpen={modalOpen} task={editingTask} defaultStatus={createStatus} onClose={closeModal} onSubmit={handleSubmit} onDelete={handleDelete} tags={tags} onCreateTag={handleCreateTag} onDeleteTag={handleDeleteTag} />
   </div>;
 }
