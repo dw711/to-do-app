@@ -112,7 +112,7 @@ export default function TaskModal({ isOpen, task, defaultStatus, onClose, onSubm
                 <option value="high">High</option>
             </select>
             </label>
-            <label>
+            <label className="field-label">
             Due date
             <input
                 ref = {dateRef}

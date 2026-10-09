@@ -166,7 +166,7 @@ export default function BoardPage() {
         aria-label={`Switch to ${darkMode ? 'light' : 'dark'} mode`}
         aria-pressed={darkMode}
       >
-        {darkMode ? '☀ Light mode' : '☾ Dark mode'}
+        {darkMode ? 'Light mode' : 'Dark mode'}
       </button>
       <button className="new-task-btn" onClick={() => openCreate()}>+ New Task</button>
     </div></header>

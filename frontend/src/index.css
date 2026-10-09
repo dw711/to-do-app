@@ -1,15 +1,136 @@
+/* =========================================================
+   TaskBoard — design tokens and base styles.
+
+   All colour, type, spacing, radius, and shadow values live
+   here as CSS custom properties. Component rules in App.css
+   reference these tokens only — no magic numbers.
+
+   Light values are the default; `:root[data-theme="dark"]`
+   flips the tokens for the dark theme.
+   ========================================================= */
+
 :root {
-  font-family: Inter, "Segoe UI", sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-  color: #0f172a;
-  background: #edf4ff;
+  /* Type scale */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --text-xs: 0.75rem;    /* 12px — badges, chips, pills, column headers */
+  --text-sm: 0.8125rem;  /* 13px — meta, descriptions, form labels */
+  --text-base: 0.875rem; /* 14px — card titles, primary body text */
+  --text-md: 1rem;       /* 16px — modal/form base */
+  --text-lg: 1.25rem;    /* 20px — app name, modal titles */
+  --text-xl: 1.75rem;    /* 28px — auth page headings */
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-bold: 700;
+  --leading-tight: 1.3;
+  --leading-normal: 1.5;
+  --tracking-tight: -0.02em;  /* headings */
+  --tracking-label: 0.06em;   /* uppercase column headers */
+  --tracking-wide: 0.02em;    /* badges, pills */
+
+  /* Spacing — 8px rhythm with 4px half steps */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* Radii — three levels plus a full pill for chips */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-full: 999px;
+
+  /* Shadows — two levels, neutral, never glowing.
+     Cards are flat at rest and only take shadow on hover/drag. */
+  --shadow-1: 0 1px 2px rgba(16, 16, 18, 0.06), 0 2px 6px rgba(16, 16, 18, 0.05);
+  --shadow-2: 0 2px 8px rgba(16, 16, 18, 0.08), 0 12px 28px rgba(16, 16, 18, 0.12);
+
+  /* Neutral grey scale — near-monochrome page */
+  --grey-0: #ffffff;   /* surfaces: cards, columns, modal */
+  --grey-1: #f7f7f8;   /* page background */
+  --grey-2: #f2f2f4;   /* muted surfaces, button hover */
+  --grey-3: #e3e3e7;   /* borders */
+  --grey-4: #d4d4d9;   /* strong borders, dashed lines */
+  --grey-5: #a0a0aa;   /* subtle text */
+  --grey-6: #6f6f7a;   /* muted text */
+  --grey-7: #40404a;   /* secondary text */
+  --grey-8: #19191d;   /* primary text */
+
+  /* Accent — one colour, flat, used on primary actions only */
+  --accent: #2e5ddb;
+  --accent-hover: #2450c0;
+  --accent-soft: rgba(46, 93, 219, 0.08);
+  --on-accent: #ffffff;
+
+  /* Colour that carries meaning */
+  --success: #2f7d4f;
+  --success-soft: #e7f3ec;
+  --warning: #9a6a12;
+  --warning-soft: #faf0dd;
+  --danger: #b33a3a;
+  --danger-hover: #9c2f2f;
+  --danger-solid: #b33a3a;
+  --danger-soft: #fbeaea;
+  --danger-border: rgba(179, 58, 58, 0.3);
+  --on-danger: #ffffff;
+
+  /* Overlays and pill outlines */
+  --overlay: rgba(16, 16, 18, 0.55);
+  --tag-border: rgba(16, 16, 18, 0.08);
+  --width-max: 1440px;
+
+  color-scheme: light;
+  font-family: var(--font-sans);
+  line-height: var(--leading-normal);
+  font-weight: var(--weight-regular);
+  color: var(--grey-8);
+  background: var(--grey-1);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  color-scheme: light;
 }
+
+:root[data-theme="dark"] {
+  --grey-0: #0f0f13;
+  --grey-1: #14141a;
+  --grey-2: #1b1b22;
+  --grey-3: #2a2a33;
+  --grey-4: #3a3a45;
+  --grey-5: #66666f;
+  --grey-6: #9a9aa5;
+  --grey-7: #c9c9d2;
+  --grey-8: #ededf1;
+
+  --accent: #5b7cff;
+  --accent-hover: #718eff;
+  --accent-soft: rgba(91, 124, 255, 0.14);
+  --on-accent: #0f0f13;
+
+  --success: #7cc89b;
+  --success-soft: rgba(52, 160, 96, 0.16);
+  --warning: #ddb06a;
+  --warning-soft: rgba(205, 150, 60, 0.16);
+  --danger: #f0a3a3;
+  --danger-hover: #d65f5f;
+  --danger-solid: #c94a4a;
+  --danger-soft: rgba(224, 84, 84, 0.16);
+  --danger-border: rgba(240, 163, 163, 0.3);
+
+  --overlay: rgba(6, 6, 8, 0.6);
+  --tag-border: rgba(255, 255, 255, 0.14);
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.3);
+  --shadow-2: 0 2px 8px rgba(0, 0, 0, 0.4), 0 12px 28px rgba(0, 0, 0, 0.45);
+
+  color-scheme: dark;
+  color: var(--grey-8);
+  background: var(--grey-1);
+}
+
+/* ---------- Base ---------- */
 
 * {
   box-sizing: border-box;
@@ -23,14 +144,13 @@ html, body, #root {
 
 body {
   min-height: 100vh;
-  background:
-    radial-gradient(circle at top, rgba(148, 163, 184, 0.18), transparent 28%),
-    linear-gradient(180deg, #eef4ff 0%, #f8fafc 100%);
-  color: #0f172a;
+  background: var(--grey-1);
+  color: var(--grey-8);
 }
 
 button, input, textarea, select {
   font: inherit;
+  color: inherit;
 }
 
 a {
@@ -46,10 +166,27 @@ img {
 button {
   border: none;
   background: none;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 input, textarea, select {
   width: 100%;
+}
+
+/* Styled focus — every keyboard-focusable element gets this ring.
+   Form controls replace it with a border + ring so it isn't doubled. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+::placeholder {
+  color: var(--grey-5);
 }
 
 .sr-only {
