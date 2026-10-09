@@ -1,7 +1,7 @@
 from flask import Blueprint, g, jsonify, request
 from .. import db
 from .auth import login_required
-from ..models import tasks, task_status, task_priority
+from ..models import tags, tasks, task_status, task_priority
 from datetime import datetime, timezone, date
 
 tasks_bp = Blueprint("tasks", __name__, url_prefix="/api/tasks")
@@ -139,6 +139,35 @@ def move_task(task_id):
     except ValueError as exc:
         db.session.rollback()
         return err("VALIDATION_ERROR", str(exc), 400)
+    except Exception as e:
+        db.session.rollback()
+        return err("INTERNAL_ERROR", "Something went wrong", 500)
+
+@tasks_bp.put("/<int:task_id>/tags") #Phase 4, replace the tag set on a task
+@login_required
+def set_task_tags(task_id):
+    task = return_task_by_id(task_id=task_id, user_id=g.current_user.id)
+    if not task:
+        return err("NOT_FOUND", "Task not found", 404)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return err("VALIDATION_ERROR", "A JSON object is required", 400)
+    tag_ids = data.get("tag_ids")
+    if not isinstance(tag_ids, list) or any(isinstance(i, bool) or not isinstance(i, int) for i in tag_ids):
+        return err("VALIDATION_ERROR", "tag_ids must be a list of integers", 400)
+    if len(set(tag_ids)) != len(tag_ids):
+        return err("VALIDATION_ERROR", "tag_ids must not contain duplicates", 400)
+    try:
+        selected_tags = db.session.scalars(
+            db.select(tags).where(tags.id.in_(tag_ids), tags.user_id == g.current_user.id)
+        ).all()
+        if len(selected_tags) != len(tag_ids):
+            return err("NOT_FOUND", "One or more tags were not found", 404)
+        # Preserve the order the client sent.
+        by_id = {tag.id: tag for tag in selected_tags}
+        task.tags = [by_id[tag_id] for tag_id in tag_ids]
+        db.session.commit()
+        return jsonify(task.to_dict()), 200
     except Exception as e:
         db.session.rollback()
         return err("INTERNAL_ERROR", "Something went wrong", 500)

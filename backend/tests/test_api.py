@@ -2,7 +2,20 @@ import os
 import unittest
 from unittest.mock import patch
 
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
+
 from app import create_app, db
+from app.models import task_tags
+
+
+@event.listens_for(Engine, "connect")
+def _enable_sqlite_foreign_keys(dbapi_connection, connection_record):
+    """SQLite ignores foreign keys unless told otherwise. Without this the
+    ON DELETE CASCADE rules on task_tags would never actually run in tests."""
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 
 
 class BackendApiTestCase(unittest.TestCase):
@@ -330,6 +343,212 @@ class BackendApiTestCase(unittest.TestCase):
             self.client.delete(f"/api/tasks/{task['id']}", headers=second_headers).status_code,
             404,
         )
+
+    def test_tag_endpoints_require_authentication(self):
+        response = self.client.get("/api/tags")
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_create_and_list_tags(self):
+        token = self.register().get_json()["token"]
+        headers = self.authorization(token)
+        first = self.client.post(
+            "/api/tags",
+            headers=headers,
+            json={"name": "Work", "colour": "#6c8ebf"},
+        )
+        second = self.client.post(
+            "/api/tags",
+            headers=headers,
+            json={"name": "urgent", "colour": "#B85450"},
+        )
+
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(first.get_json()["name"], "Work")
+        self.assertEqual(first.get_json()["colour"], "#6c8ebf")
+        self.assertEqual(second.status_code, 201)
+        # Colour is normalised to lowercase.
+        self.assertEqual(second.get_json()["colour"], "#b85450")
+
+        listing = self.client.get("/api/tags", headers=headers)
+        self.assertEqual(listing.status_code, 200)
+        self.assertEqual([tag["name"] for tag in listing.get_json()], ["Work", "urgent"])
+
+    def test_create_tag_validates_name_and_colour(self):
+        token = self.register().get_json()["token"]
+        headers = self.authorization(token)
+        missing_name = self.client.post("/api/tags", headers=headers, json={"colour": "#6c8ebf"})
+        blank_name = self.client.post("/api/tags", headers=headers, json={"name": "  ", "colour": "#6c8ebf"})
+        bad_colour = self.client.post("/api/tags", headers=headers, json={"name": "Work", "colour": "red"})
+        short_colour = self.client.post("/api/tags", headers=headers, json={"name": "Work", "colour": "#fff"})
+
+        self.assertEqual(missing_name.status_code, 400)
+        self.assertEqual(blank_name.status_code, 400)
+        self.assertEqual(bad_colour.status_code, 400)
+        self.assertEqual(short_colour.status_code, 400)
+
+    def test_create_duplicate_tag_returns_conflict(self):
+        token = self.register().get_json()["token"]
+        headers = self.authorization(token)
+        created = self.client.post(
+            "/api/tags",
+            headers=headers,
+            json={"name": "Work", "colour": "#6c8ebf"},
+        )
+        duplicate = self.client.post(
+            "/api/tags",
+            headers=headers,
+            json={"name": "Work", "colour": "#ff0000"},
+        )
+
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual(duplicate.status_code, 409)
+        self.assertEqual(duplicate.get_json()["error"]["code"], "CONFLICT")
+
+    def test_tags_are_scoped_per_user(self):
+        first_token = self.register().get_json()["token"]
+        tag = self.client.post(
+            "/api/tags",
+            headers=self.authorization(first_token),
+            json={"name": "Work", "colour": "#6c8ebf"},
+        ).get_json()
+        second_token = self.register(
+            email="other@example.com",
+            display_name="Other Person",
+        ).get_json()["token"]
+        second_headers = self.authorization(second_token)
+
+        self.assertEqual(self.client.get("/api/tags", headers=second_headers).get_json(), [])
+        self.assertEqual(
+            self.client.delete(f"/api/tags/{tag['id']}", headers=second_headers).status_code,
+            404,
+        )
+
+    def test_put_task_tags_replaces_the_set(self):
+        token = self.register().get_json()["token"]
+        headers = self.authorization(token)
+        task = self.client.post("/api/tasks", headers=headers, json={"title": "Tagged task"}).get_json()
+        work = self.client.post(
+            "/api/tags",
+            headers=headers,
+            json={"name": "Work", "colour": "#6c8ebf"},
+        ).get_json()
+        urgent = self.client.post(
+            "/api/tags",
+            headers=headers,
+            json={"name": "Urgent", "colour": "#b85450"},
+        ).get_json()
+
+        self.assertEqual(task["tags"], [])
+
+        assigned = self.client.put(
+            f"/api/tasks/{task['id']}/tags",
+            headers=headers,
+            json={"tag_ids": [work["id"], urgent["id"]]},
+        )
+        self.assertEqual(assigned.status_code, 200)
+        self.assertEqual([tag["name"] for tag in assigned.get_json()["tags"]], ["Work", "Urgent"])
+
+        narrowed = self.client.put(
+            f"/api/tasks/{task['id']}/tags",
+            headers=headers,
+            json={"tag_ids": [work["id"]]},
+        )
+        self.assertEqual(narrowed.status_code, 200)
+        self.assertEqual([tag["id"] for tag in narrowed.get_json()["tags"]], [work["id"]])
+
+        cleared = self.client.put(
+            f"/api/tasks/{task['id']}/tags",
+            headers=headers,
+            json={"tag_ids": []},
+        )
+        self.assertEqual(cleared.status_code, 200)
+        self.assertEqual(cleared.get_json()["tags"], [])
+
+    def test_put_task_tags_rejects_unknown_and_foreign_tags(self):
+        token = self.register().get_json()["token"]
+        headers = self.authorization(token)
+        task = self.client.post("/api/tasks", headers=headers, json={"title": "Strict"}).get_json()
+        other_token = self.register(
+            email="other@example.com",
+            display_name="Other Person",
+        ).get_json()["token"]
+        foreign_tag = self.client.post(
+            "/api/tags",
+            headers=self.authorization(other_token),
+            json={"name": "Theirs", "colour": "#6c8ebf"},
+        ).get_json()
+
+        unknown = self.client.put(
+            f"/api/tasks/{task['id']}/tags",
+            headers=headers,
+            json={"tag_ids": [999]},
+        )
+        foreign = self.client.put(
+            f"/api/tasks/{task['id']}/tags",
+            headers=headers,
+            json={"tag_ids": [foreign_tag["id"]]},
+        )
+        not_a_list = self.client.put(
+            f"/api/tasks/{task['id']}/tags",
+            headers=headers,
+            json={"tag_ids": "Work"},
+        )
+
+        self.assertEqual(unknown.status_code, 404)
+        self.assertEqual(foreign.status_code, 404)
+        self.assertEqual(not_a_list.status_code, 400)
+
+    def test_delete_tag_removes_it_from_tasks_without_deleting_them(self):
+        token = self.register().get_json()["token"]
+        headers = self.authorization(token)
+        task = self.client.post("/api/tasks", headers=headers, json={"title": "Survivor"}).get_json()
+        tag = self.client.post(
+            "/api/tags",
+            headers=headers,
+            json={"name": "Doomed", "colour": "#6c8ebf"},
+        ).get_json()
+        self.client.put(
+            f"/api/tasks/{task['id']}/tags",
+            headers=headers,
+            json={"tag_ids": [tag["id"]]},
+        )
+
+        deleted = self.client.delete(f"/api/tags/{tag['id']}", headers=headers)
+        self.assertEqual(deleted.status_code, 204)
+
+        remaining = self.client.get(f"/api/tasks/{task['id']}", headers=headers)
+        self.assertEqual(remaining.status_code, 200)
+        self.assertEqual(remaining.get_json()["tags"], [])
+
+        with self.app.app_context():
+            orphan_joins = db.session.query(task_tags).filter_by(tag_id=tag["id"]).count()
+        self.assertEqual(orphan_joins, 0)
+
+    def test_delete_task_cleans_up_its_tag_links(self):
+        token = self.register().get_json()["token"]
+        headers = self.authorization(token)
+        task = self.client.post("/api/tasks", headers=headers, json={"title": "Vanishing"}).get_json()
+        tag = self.client.post(
+            "/api/tags",
+            headers=headers,
+            json={"name": "Sticky", "colour": "#6c8ebf"},
+        ).get_json()
+        self.client.put(
+            f"/api/tasks/{task['id']}/tags",
+            headers=headers,
+            json={"tag_ids": [tag["id"]]},
+        )
+
+        deleted = self.client.delete(f"/api/tasks/{task['id']}", headers=headers)
+        self.assertEqual(deleted.status_code, 204)
+
+        # The tag itself survives; only the join row is cascaded away.
+        tags_after = self.client.get("/api/tags", headers=headers).get_json()
+        self.assertEqual([t["id"] for t in tags_after], [tag["id"]])
+        with self.app.app_context():
+            orphan_joins = db.session.query(task_tags).filter_by(task_id=task["id"]).count()
+        self.assertEqual(orphan_joins, 0)
 
 
 if __name__ == "__main__":

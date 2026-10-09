@@ -37,7 +37,7 @@ class tasks(db.Model):
     __tablename__ = "tasks"
 
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     title = db.Column(db.String(255), nullable=False)
     description = db.Column(db.Text, nullable=True)
     status = db.Column(db.Enum(task_status), default=task_status.todo, nullable=False)
@@ -45,6 +45,7 @@ class tasks(db.Model):
     priority = db.Column(db.Enum(task_priority), default=task_priority.medium, nullable=False)
     due_date = db.Column(db.Date, nullable=True)
     completed_at = db.Column(db.DateTime, nullable=True)
+    tags = db.relationship("tags", secondary="task_tags", lazy="selectin")
 
     def to_dict(self):
         return {
@@ -57,4 +58,29 @@ class tasks(db.Model):
             "priority": str(self.priority.value),
             "due_date": self.due_date.isoformat() if self.due_date else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "tags": [tag.to_dict() for tag in self.tags],
         }
+
+
+class tags(db.Model):
+    __tablename__ = "tags"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    name = db.Column(db.String(50), nullable=False)
+    colour = db.Column(db.String(7), nullable=False)
+    __table_args__ = (db.UniqueConstraint("user_id", "name"),)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "colour": self.colour,
+        }
+
+
+class task_tags(db.Model):
+    __tablename__ = "task_tags"
+
+    task_id = db.Column(db.Integer, db.ForeignKey("tasks.id", ondelete="CASCADE"), primary_key=True)
+    tag_id = db.Column(db.Integer, db.ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True)
