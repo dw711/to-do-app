@@ -2,7 +2,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from ..app import create_app, db
+from app import create_app, db
 
 
 class BackendApiTestCase(unittest.TestCase):
@@ -142,6 +142,136 @@ class BackendApiTestCase(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
+
+    def test_task_priority_defaults_medium(self):
+        token = self.register().get_json()["token"]
+
+        response = self.client.post(
+            "/api/tasks",
+            headers=self.authorization(token),
+            json={"title": "No priority given"},
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json()["priority"], "medium")
+
+    def test_task_priority_accepts_values_and_patches(self):
+        token = self.register().get_json()["token"]
+        headers = self.authorization(token)
+        created = self.client.post(
+            "/api/tasks",
+            headers=headers,
+            json={"title": "High priority", "priority": "high"},
+        )
+
+        self.assertEqual(created.status_code, 201)
+        task_id = created.get_json()["id"]
+        self.assertEqual(created.get_json()["priority"], "high")
+
+        updated = self.client.patch(
+            f"/api/tasks/{task_id}",
+            headers=headers,
+            json={"priority": "low"},
+        )
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(updated.get_json()["priority"], "low")
+
+        invalid = self.client.post(
+            "/api/tasks",
+            headers=headers,
+            json={"title": "Bad priority", "priority": "urgent"},
+        )
+        self.assertEqual(invalid.status_code, 400)
+
+    def test_task_due_date_create_persists_and_invalid_rejected(self):
+        token = self.register().get_json()["token"]
+        headers = self.authorization(token)
+        created = self.client.post(
+            "/api/tasks",
+            headers=headers,
+            json={"title": "Dated task", "due_date": "2026-12-31"},
+        )
+
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.get_json()["due_date"], "2026-12-31")
+
+        invalid = self.client.post(
+            "/api/tasks",
+            headers=headers,
+            json={"title": "Bad date", "due_date": "not-a-date"},
+        )
+        self.assertEqual(invalid.status_code, 400)
+
+    def test_task_due_date_patch_set_and_clear_to_null(self):
+        token = self.register().get_json()["token"]
+        headers = self.authorization(token)
+        created = self.client.post(
+            "/api/tasks",
+            headers=headers,
+            json={"title": "Date editor"},
+        ).get_json()
+        task_id = created["id"]
+
+        set_date = self.client.patch(
+            f"/api/tasks/{task_id}",
+            headers=headers,
+            json={"due_date": "2026-10-09"},
+        )
+        self.assertEqual(set_date.status_code, 200)
+        self.assertEqual(set_date.get_json()["due_date"], "2026-10-09")
+
+        cleared = self.client.patch(
+            f"/api/tasks/{task_id}",
+            headers=headers,
+            json={"due_date": None},
+        )
+        self.assertEqual(cleared.status_code, 200)
+        self.assertIsNone(cleared.get_json()["due_date"])
+
+    def test_task_completed_at_set_on_done_and_cleared_moving_back(self):
+        token = self.register().get_json()["token"]
+        headers = self.authorization(token)
+        created = self.client.post(
+            "/api/tasks",
+            headers=headers,
+            json={"title": "Finish me"},
+        ).get_json()
+        task_id = created["id"]
+        self.assertIsNone(created["completed_at"])
+
+        done = self.client.patch(
+            f"/api/tasks/{task_id}/move",
+            headers=headers,
+            json={"status": "done", "position": 0},
+        )
+        self.assertEqual(done.status_code, 200)
+        self.assertIsNotNone(done.get_json()["completed_at"])
+
+        # Moving back out of Completed clears it.
+        back = self.client.patch(
+            f"/api/tasks/{task_id}/move",
+            headers=headers,
+            json={"status": "todo", "position": 0},
+        )
+        self.assertEqual(back.status_code, 200)
+        self.assertIsNone(back.get_json()["completed_at"])
+
+        # Reordering within Completed must not touch completed_at.
+        re_done = self.client.patch(
+            f"/api/tasks/{task_id}/move",
+            headers=headers,
+            json={"status": "done", "position": 0},
+        )
+        completed_at = re_done.get_json()["completed_at"]
+        self.assertIsNotNone(completed_at)
+
+        same_status = self.client.patch(
+            f"/api/tasks/{task_id}/move",
+            headers=headers,
+            json={"status": "done", "position": 0},
+        )
+        self.assertEqual(same_status.status_code, 200)
+        self.assertEqual(same_status.get_json()["completed_at"], completed_at)
 
     def test_task_read_update_move_and_delete(self):
         token = self.register().get_json()["token"]
