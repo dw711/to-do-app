@@ -496,24 +496,24 @@ The board works end to end, for a single hardcoded user. No auth yet.
 
 ### Phase 4 — Tags
 
-- [ ] `tags` and `task_tags` tables migrated in, with the `(user_id, name)` unique constraint
-- [ ] `GET`/`POST`/`DELETE /api/tags` and `PUT /api/tasks/:id/tags` all work
-- [ ] The modal lists the user's tags, and tags can be added to and removed from a task
-- [ ] A new tag can be created from inside the modal, with a colour chosen
-- [ ] Tag pills render on cards in the tag's colour
-- [ ] Creating a duplicate tag name shows a clear error rather than a 500
-- [ ] Deleting a tag removes it from every task that had it, without deleting those tasks
+- [x] `tags` and `task_tags` tables migrated in, with the `(user_id, name)` unique constraint
+- [x] `GET`/`POST`/`DELETE /api/tags` and `PUT /api/tasks/:id/tags` all work
+- [x] The modal lists the user's tags, and tags can be added to and removed from a task
+- [x] A new tag can be created from inside the modal, with a colour chosen
+- [x] Tag pills render on cards in the tag's colour
+- [x] Creating a duplicate tag name shows a clear error rather than a 500
+- [x] Deleting a tag removes it from every task that had it, without deleting those tasks
 
 ### Phase 5 — Search and filter
 
-- [ ] `GET /api/tasks` honours `q`, `tag_id`, and `due_before`, and combines them
-- [ ] The search input filters the board as you type (debounced ~300ms), matching title and description, case-insensitively
-- [ ] The tag filter narrows the board to tasks carrying the selected tag
-- [ ] The due filter offers **Overdue / Today / This week / Any**
-- [ ] Filters combine — search plus tag plus due date narrows correctly
-- [ ] Column counts reflect what's visible, not the unfiltered totals
-- [ ] Clearing all filters restores the full board
-- [ ] Filtering never triggers a full page reload
+- [x] `GET /api/tasks` honours `q`, `tag_id`, and `due_before`, and combines them
+- [x] The search input filters the board as you type (debounced ~300ms), matching title and description, case-insensitively
+- [x] The tag filter narrows the board to tasks carrying the selected tag
+- [x] The due filter offers **Overdue / Today / This week / Any**
+- [x] Filters combine — search plus tag plus due date narrows correctly
+- [x] Column counts reflect what's visible, not the unfiltered totals
+- [x] Clearing all filters restores the full board
+- [x] Filtering never triggers a full page reload
 
 ---
 
