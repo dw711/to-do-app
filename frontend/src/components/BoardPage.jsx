@@ -1,8 +1,29 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Board from './Board';
 import TaskModal from './TaskModal';
 import { apiJson } from '../api';
 import { useAuth } from '../AuthContext';
+
+// Local-date ISO helper so due filters use the user's calendar day, not UTC.
+function dayOffsetIso(days) {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + days);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+// Maps the due filter onto the backend's inclusive range params.
+function dueRangeParams(dueFilter) {
+  switch (dueFilter) {
+    case 'overdue': return { before: dayOffsetIso(-1) }; // strictly past due
+    case 'today': return { from: dayOffsetIso(0), before: dayOffsetIso(0) };
+    case 'week': return { from: dayOffsetIso(0), before: dayOffsetIso(6) };
+    default: return null; // 'any'
+  }
+}
 
 export default function BoardPage() {
   const { user, logout } = useAuth();
@@ -15,15 +36,43 @@ export default function BoardPage() {
   const [editingTask, setEditingTask] = useState(null);
   const [createStatus, setCreateStatus] = useState('todo');
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('taskboard_theme') === 'dark');
+  const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [filterTagId, setFilterTagId] = useState('');
+  const [dueFilter, setDueFilter] = useState('any');
+  const filterRequest = useRef(0); // only the latest filter fetch may touch state
 
   useEffect(() => {
     document.documentElement.dataset.theme = darkMode ? 'dark' : 'light';
     localStorage.setItem('taskboard_theme', darkMode ? 'dark' : 'light');
   }, [darkMode]);
 
+  // Debounce the search input (~300ms) so a keystroke doesn't fire a request.
   useEffect(() => {
-    apiJson('/api/tasks').then(setTasks).catch(err => setError(err.message)).finally(() => setLoading(false));
-  }, []);
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // Fetch tasks whenever a filter changes; the server combines them all.
+  useEffect(() => {
+    const requestId = ++filterRequest.current;
+    const controller = new AbortController();
+    const params = new URLSearchParams();
+    const q = debouncedSearch.trim();
+    if (q) params.set('q', q);
+    if (filterTagId) params.set('tag_id', String(filterTagId));
+    const range = dueRangeParams(dueFilter);
+    if (range) {
+      if (range.from) params.set('due_from', range.from);
+      if (range.before) params.set('due_before', range.before);
+    }
+    const qs = params.toString();
+    apiJson(qs ? `/api/tasks?${qs}` : '/api/tasks', { signal: controller.signal })
+      .then(tasks => { if (requestId === filterRequest.current) setTasks(tasks); })
+      .catch(err => { if (requestId === filterRequest.current) setError(err.message); })
+      .finally(() => { if (requestId === filterRequest.current) setLoading(false); });
+    return () => controller.abort();
+  }, [debouncedSearch, filterTagId, dueFilter]);
   useEffect(() => {
     apiJson('/api/tags').then(setTags).catch(() => {});
   }, []);
@@ -121,6 +170,47 @@ export default function BoardPage() {
       </button>
       <button className="new-task-btn" onClick={() => openCreate()}>+ New Task</button>
     </div></header>
+    <div className="filter-bar" role="search">
+      <input
+        className="filter-search"
+        type="search"
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+        placeholder="Search tasks…"
+        aria-label="Search tasks"
+      />
+      <select
+        className="filter-tag"
+        value={filterTagId}
+        onChange={e => setFilterTagId(e.target.value)}
+        aria-label="Filter by tag"
+      >
+        <option value="">All tags</option>
+        {tags.map(tag => (
+          <option key={tag.id} value={tag.id}>{tag.name}</option>
+        ))}
+      </select>
+      <select
+        className="filter-due"
+        value={dueFilter}
+        onChange={e => setDueFilter(e.target.value)}
+        aria-label="Filter by due date"
+      >
+        <option value="any">Any due date</option>
+        <option value="overdue">Overdue</option>
+        <option value="today">Due today</option>
+        <option value="week">Due this week</option>
+      </select>
+      {(search || filterTagId || dueFilter !== 'any') && (
+        <button
+          type="button"
+          className="filter-clear"
+          onClick={() => { setSearch(''); setFilterTagId(''); setDueFilter('any'); }}
+        >
+          Clear
+        </button>
+      )}
+    </div>
     {moveError && <div className="board-toast" role="alert">
       <span>{moveError}</span>
       <button type="button" aria-label="Dismiss error" onClick={() => setMoveError('')}>×</button>

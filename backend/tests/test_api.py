@@ -680,6 +680,116 @@ class BackendApiTestCase(unittest.TestCase):
             orphan_joins = db.session.query(task_tags).filter_by(task_id=task["id"]).count()
         self.assertEqual(orphan_joins, 0)
 
+    def test_task_search_filters_by_q_on_title_and_description(self):
+        token = self.register().get_json()["token"]
+        headers = self.authorization(token)
+        self.client.post(
+            "/api/tasks",
+            headers=headers,
+            json={"title": "Write the Q3 report", "description": "Pull numbers from the finance sheet"},
+        )
+        self.client.post(
+            "/api/tasks",
+            headers=headers,
+            json={"title": "Book flights", "description": "Confirm arrival times with the team"},
+        )
+
+        by_title = self.client.get("/api/tasks?q=report", headers=headers)
+        by_description = self.client.get("/api/tasks?q=finance", headers=headers)
+        other_description = self.client.get("/api/tasks?q=arrival", headers=headers)
+        case_insensitive = self.client.get("/api/tasks?q=REPORT", headers=headers)
+        no_match = self.client.get("/api/tasks?q=zzzz", headers=headers)
+
+        self.assertEqual([t["title"] for t in by_title.get_json()], ["Write the Q3 report"])
+        self.assertEqual([t["title"] for t in by_description.get_json()], ["Write the Q3 report"])
+        self.assertEqual([t["title"] for t in other_description.get_json()], ["Book flights"])
+        self.assertEqual([t["title"] for t in case_insensitive.get_json()], ["Write the Q3 report"])
+        self.assertEqual(no_match.get_json(), [])
+
+    def test_task_filter_by_tag_id_matches_any_of_the_tags(self):
+        token = self.register().get_json()["token"]
+        headers = self.authorization(token)
+        task_a = self.client.post("/api/tasks", headers=headers, json={"title": "Task A"}).get_json()
+        task_b = self.client.post("/api/tasks", headers=headers, json={"title": "Task B"}).get_json()
+        self.client.post("/api/tasks", headers=headers, json={"title": "Task C"})
+        work = self.client.post(
+            "/api/tags", headers=headers, json={"name": "Work", "colour": "#6c8ebf"}
+        ).get_json()
+        urgent = self.client.post(
+            "/api/tags", headers=headers, json={"name": "Urgent", "colour": "#b85450"}
+        ).get_json()
+        self.client.put(
+            f"/api/tasks/{task_a['id']}/tags", headers=headers, json={"tag_ids": [work["id"]]}
+        )
+        self.client.put(
+            f"/api/tasks/{task_b['id']}/tags", headers=headers, json={"tag_ids": [urgent["id"]]}
+        )
+
+        one_tag = self.client.get(f"/api/tasks?tag_id={work['id']}", headers=headers)
+        either = self.client.get(
+            f"/api/tasks?tag_id={work['id']}&tag_id={urgent['id']}", headers=headers
+        )
+        no_match = self.client.get("/api/tasks?tag_id=999", headers=headers)
+
+        self.assertEqual([t["title"] for t in one_tag.get_json()], ["Task A"])
+        self.assertEqual(sorted(t["title"] for t in either.get_json()), ["Task A", "Task B"])
+        self.assertEqual(no_match.get_json(), [])
+
+    def test_task_due_date_filters_within_inclusive_range(self):
+        token = self.register().get_json()["token"]
+        headers = self.authorization(token)
+        self.client.post(
+            "/api/tasks", headers=headers, json={"title": "Old", "due_date": "2026-10-01"}
+        )
+        self.client.post(
+            "/api/tasks", headers=headers, json={"title": "Exact", "due_date": "2026-10-09"}
+        )
+        self.client.post(
+            "/api/tasks", headers=headers, json={"title": "Future", "due_date": "2026-12-31"}
+        )
+        self.client.post("/api/tasks", headers=headers, json={"title": "No date"})
+
+        before = self.client.get("/api/tasks?due_before=2026-10-09", headers=headers)
+        after = self.client.get("/api/tasks?due_from=2026-10-09", headers=headers)
+        exact_day = self.client.get(
+            "/api/tasks?due_from=2026-10-09&due_before=2026-10-09", headers=headers
+        )
+
+        self.assertEqual([t["title"] for t in before.get_json()], ["Old", "Exact"])
+        self.assertEqual([t["title"] for t in after.get_json()], ["Exact", "Future"])
+        self.assertEqual([t["title"] for t in exact_day.get_json()], ["Exact"])
+
+    def test_task_filters_combine_and_reject_bad_input(self):
+        token = self.register().get_json()["token"]
+        headers = self.authorization(token)
+        tagged = self.client.post(
+            "/api/tasks",
+            headers=headers,
+            json={"title": "Tagged report", "due_date": "2026-10-01"},
+        ).get_json()
+        self.client.post(
+            "/api/tasks",
+            headers=headers,
+            json={"title": "Plain report", "due_date": "2026-10-02"},
+        )
+        tag = self.client.post(
+            "/api/tags", headers=headers, json={"name": "Work", "colour": "#6c8ebf"}
+        ).get_json()
+        self.client.put(
+            f"/api/tasks/{tagged['id']}/tags", headers=headers, json={"tag_ids": [tag["id"]]}
+        )
+
+        combined = self.client.get(
+            f"/api/tasks?q=report&tag_id={tag['id']}&due_before=2026-10-31",
+            headers=headers,
+        )
+        bad_date = self.client.get("/api/tasks?due_before=not-a-date", headers=headers)
+        bad_tag = self.client.get("/api/tasks?tag_id=abc", headers=headers)
+
+        self.assertEqual([t["title"] for t in combined.get_json()], ["Tagged report"])
+        self.assertEqual(bad_date.status_code, 400)
+        self.assertEqual(bad_tag.status_code, 400)
+
 
 if __name__ == "__main__":
     unittest.main()

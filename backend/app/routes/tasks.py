@@ -1,4 +1,5 @@
 from flask import Blueprint, g, jsonify, request
+from sqlalchemy import or_
 from .. import db
 from .auth import login_required
 from ..models import tags, tasks, task_status, task_priority
@@ -6,20 +7,52 @@ from datetime import datetime, timezone, date
 
 tasks_bp = Blueprint("tasks", __name__, url_prefix="/api/tasks")
 
-@tasks_bp.get("") #Phase 1 get tasks by queries
+@tasks_bp.get("") #Phase 1 get tasks by queries; Phase 5 adds q, tag_id, due_from, due_before
 @login_required
 def get_tasks():
     user_id = g.current_user.id
-    status = request.args.get("status", type=str)
-    #q = request.args.get("q", type=str) #implement Phase 5. search by content of cards or title
     query = db.select(tasks).where(tasks.user_id==user_id)
+
+    status = request.args.get("status", type=str)
     if status:
         try:
             status = task_status(status)
             query = query.where(tasks.status==status)
         except ValueError:
             return err("VALIDATION_ERROR", "Invalid status", 400)
-    
+
+    # Phase 5 — search: case-insensitive substring on title or description.
+    q = (request.args.get("q") or "").strip()
+    if q:
+        query = query.where(
+            or_(tasks.title.ilike(f"%{q}%"), tasks.description.ilike(f"%{q}%"))
+        )
+
+    # Phase 5 — tag filter: tasks carrying any of the given tag ids.
+    try:
+        tag_ids = [int(tag) for tag in request.args.getlist("tag_id")]
+    except ValueError:
+        return err("VALIDATION_ERROR", "tag_id must be an integer", 400)
+    if tag_ids:
+        query = query.where(tasks.tags.any(tags.id.in_(tag_ids)))
+
+    # Phase 5 — due-date filters (inclusive range over tasks that have a due date).
+    due_before = request.args.get("due_before")
+    if due_before is not None:
+        try:
+            due_before = date.fromisoformat(due_before)
+        except ValueError:
+            return err("VALIDATION_ERROR", "due_before must be a date in YYYY-MM-DD form", 400)
+        query = query.where(tasks.due_date.is_not(None), tasks.due_date <= due_before)
+
+    due_from = request.args.get("due_from")
+    if due_from is not None:
+        try:
+            due_from = date.fromisoformat(due_from)
+        except ValueError:
+            return err("VALIDATION_ERROR", "due_from must be a date in YYYY-MM-DD form", 400)
+        query = query.where(tasks.due_date.is_not(None), tasks.due_date >= due_from)
+
     query = query.order_by(tasks.status, tasks.position, tasks.id)
     tasks_list = db.session.scalars(query).all()
     return jsonify([
